@@ -13,11 +13,6 @@ session.on 'packet', (raw) ->
     data = packet?.link?.ip?.tcp?.data?.toString()
     host = /Host: (.*)/.exec(data)?[1]
 
-    #console.log "#{source} -> #{destination} #{host? and '('+host+')'}" 
-
-    if /osnews/.test data
-        console.log "#{source} -> #{data}"
-
     if host? and /192.168.1.*/.test source
         geo2 = geoip.lookup destination
         d = distance geo.ll, geo2.ll
@@ -27,7 +22,6 @@ session.on 'packet', (raw) ->
             note = +dest / 2
             coremidi.write [144, note, 127]
             setTimeout( (-> coremidi.write([128, note, 0])), d )
-
 
 # [lat, lon]
 # calculation from http://www.movable-type.co.uk/scripts/latlong.html
