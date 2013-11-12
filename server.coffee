@@ -3,6 +3,9 @@ util = require 'util'
 pcap = require 'pcap'
 session = pcap.createSession 'en0', ''
 coremidi = require('coremidi')()
+osc = require 'osc-min'
+dgram = require 'dgram'
+socket = dgram.createSocket 'udp4'
 
 geo = geoip.lookup '184.74.199.219'
 
@@ -15,13 +18,11 @@ session.on 'packet', (raw) ->
 
     if host? and /192.168.1.*/.test source
         geo2 = geoip.lookup destination
-        d = distance geo.ll, geo2.ll
-        console.log "#{d}km apart"
-        console.log "#{source} -> #{host}"
+        duration = distance(geo.ll, geo2.ll) / 1000 # km ~= ms # TODO: make it the actual speed of sound or light
         for dest in destination.split '.'
             note = +dest / 2
-            coremidi.write [144, note, 127]
-            setTimeout( (-> coremidi.write([128, note, 0])), d )
+            makesound note, duration
+            sendnote note, duration
 
 # [lat, lon]
 # calculation from http://www.movable-type.co.uk/scripts/latlong.html
@@ -32,3 +33,22 @@ distance = (ll1, ll2) ->
     x = (lon2-lon1) * Math.cos((lat1+lat2)/2)
     y = (lat2-lat1)
     Math.round(Math.sqrt(x*x + y*y) * R)
+
+# send a midi note over osc for some duration
+sendnote = (note, duration) ->
+    outport = 3333
+    buf = osc.toBuffer
+        address: "/note"
+        args: [ note, 127 ] # note on
+    socket.send buf, 0, buf.length, outport, "localhost"
+    buf = osc.toBuffer
+        address: "/note"
+        args: [ note, 0 ] # note off
+    setTimeout ->
+        socket.send buf, 0, buf.length, outport, "localhost"
+    , duration
+
+makesound = (note, duration) ->
+    coremidi.write [0xC << 4, 14, 0]
+    coremidi.write [144, note, 127]
+    setTimeout( (-> coremidi.write([128, note, 0])), duration/100 )
