@@ -6,20 +6,49 @@ coremidi = require('coremidi')()
 osc = require 'osc-min'
 dgram = require 'dgram'
 socket = dgram.createSocket 'udp4'
+request = require 'request'
 
-geo = geoip.lookup '184.74.199.219'
+local_address = local_geo = address = remote_geo = 0
+
+os = require "os"
+interfaces = os.networkInterfaces()
+addresses = []
+for k of interfaces
+  for k2 of interfaces[k]
+    address = interfaces[k][k2]
+    addresses.push address.address  if address.family is "IPv4" and not address.internal
+local_address = addresses[0]
+
+###
+request 'http://ifconfig.me/ip', (error, response, body) ->
+  if error
+    console.error error
+  address = body.trim()
+
+  local_geo = geoip.lookup address
+  console.log address, local_geo.ll
+###
+address = '50.75.245.246'
+local_geo = geoip.lookup address
 
 session.on 'packet', (raw) ->
+  if local_geo
     packet = pcap.decode.packet raw
-    source = packet?.link?.ip?.saddr
-    destination = packet?.link?.ip?.daddr
-    data = packet?.link?.ip?.tcp?.data?.toString()
-    host = /Host: (.*)/.exec(data)?[1]
 
-    if host? and /192.168.1.*/.test source
-        geo2 = geoip.lookup destination
-        duration = distance(geo.ll, geo2.ll) / 1000 # km ~= ms # TODO: make it the actual speed of sound or light
-        for dest in destination.split '.'
+    if packet?.link?.ip?.tcp?.data
+      source = packet?.link?.ip?.saddr
+      destination = packet?.link?.ip?.daddr
+      data = packet?.link?.ip?.tcp?.data?.toString()
+      bytes = packet?.link?.ip?.tcp?.data_bytes
+      total_length = packet?.link?.ip?.total_length
+
+      # filter out local to local messages
+      [first, local, remote] = (addr.split('.')[0] for addr in [local_address, source, destination])
+      unless (first is local) and (first is remote)
+        remote_geo = geoip.lookup(if source is address then destination else source)
+        if local_geo and remote_geo
+          duration = distance(local_geo.ll, remote_geo.ll) / 1000 # km ~= ms # TODO: make it the actual speed of sound or light
+          for dest in destination.split '.'
             note = +dest / 2
             makesound note, duration
             sendnote note, duration
