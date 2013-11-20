@@ -50,8 +50,9 @@ session.on 'packet', (raw) ->
           duration = distance(local_geo.ll, remote_geo.ll) / 1000 # km ~= ms # TODO: make it the actual speed of sound or light
           for dest in destination.split '.'
             note = +dest / 2
-            makesound note, duration
-            sendnote note, duration
+            console.log note, duration
+            #makesound note, duration
+            #sendnote note, duration
 
 # [lat, lon]
 # calculation from http://www.movable-type.co.uk/scripts/latlong.html
