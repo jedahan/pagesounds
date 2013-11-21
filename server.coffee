@@ -86,11 +86,13 @@ session.on 'packet', (raw) ->
       # filter out local to local messages
       [first, local, remote] = (addr.split('.')[0] for addr in [local_address, source, destination])
       unless (first is local) and (first is remote)
-        remote_geo = geoip.lookup(if source is address then destination else source)
+        incoming = source is address
+        remote_geo = geoip.lookup(if incoming then destination else source)
         if local_geo and remote_geo
           util.print duration = distance(local_geo.ll, remote_geo.ll) / 1000 # km ~= ms # TODO: make it the actual speed of sound or light
           util.print ' '
-          remote_addr = if source is address then destination else source
+          remote_addr = if incoming then destination else source
+          instrument = if incoming then 1 else 2
           console.log notes = (Math.round(+dest/2) for dest in remote_addr.split '.')
 
           for note in notes
