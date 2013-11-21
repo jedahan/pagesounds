@@ -54,8 +54,11 @@ sendnote = (note, duration) ->
   , duration
 
 makesound = (note, duration, instrument=1, volume=1) ->
+  # change instrument
   coremidi.write [0xC << 4, instrument, 0]
-  coremidi.write [144, note, 127]
+  # play note
+  coremidi.write [144, note, Math.round(127*(.5 + volume/2))]
+  # turn off note in a few ms
   setTimeout( (-> coremidi.write([128, note, 0])), duration/100 )
 
 # MAIN
@@ -91,5 +94,6 @@ session.on 'packet', (raw) ->
           console.log notes = (Math.round(+dest/2) for dest in remote_addr.split '.')
 
           for note in notes
-            makesound note, duration, 1, bytes/Math.max(last_ten_packet_sizes)
+            # magic splat! thanks http://coffeescriptcookbook.com/chapters/arrays/max-array-value
+            makesound note, duration, 1, bytes/Math.max last_ten_packet_sizes...
           #   sendnote note, duration
