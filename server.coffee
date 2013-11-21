@@ -8,51 +8,24 @@ dgram = require 'dgram'
 socket = dgram.createSocket 'udp4'
 request = require 'request'
 
-local_address = local_geo = address = remote_geo = 0
+last_ten_packet_sizes = [0,0,0,0,0,0,0,0,0,0,0]
 
-os = require "os"
-interfaces = os.networkInterfaces()
-addresses = []
-for k of interfaces
-  for k2 of interfaces[k]
-    address = interfaces[k][k2]
-    addresses.push address.address  if address.family is "IPv4" and not address.internal
-local_address = addresses[0]
+get_local_address = ->
+  os = require "os"
+  interfaces = os.networkInterfaces()
+  addresses = []
+  for k of interfaces
+    for k2 of interfaces[k]
+      address = interfaces[k][k2]
+      addresses.push address.address  if address.family is "IPv4" and not address.internal
+  local_address = addresses[0]
 
-###
-request 'http://ifconfig.me/ip', (error, response, body) ->
-  if error
-    console.error error
-  address = body.trim()
-
-  local_geo = geoip.lookup address
-  console.log address, local_geo.ll
-###
-address = '50.75.245.246'
-local_geo = geoip.lookup address
-
-session.on 'packet', (raw) ->
-  if local_geo
-    packet = pcap.decode.packet raw
-
-    if packet?.link?.ip?.tcp?.data
-      source = packet?.link?.ip?.saddr
-      destination = packet?.link?.ip?.daddr
-      data = packet?.link?.ip?.tcp?.data?.toString()
-      bytes = packet?.link?.ip?.tcp?.data_bytes
-      total_length = packet?.link?.ip?.total_length
-
-      # filter out local to local messages
-      [first, local, remote] = (addr.split('.')[0] for addr in [local_address, source, destination])
-      unless (first is local) and (first is remote)
-        remote_geo = geoip.lookup(if source is address then destination else source)
-        if local_geo and remote_geo
-          duration = distance(local_geo.ll, remote_geo.ll) / 1000 # km ~= ms # TODO: make it the actual speed of sound or light
-          for dest in destination.split '.'
-            note = +dest / 2
-            console.log note, duration
-            #makesound note, duration
-            #sendnote note, duration
+get_remote_address = (cb) ->
+  if process.env.NODE_ENV is 'development'
+    cb '50.75.245.246'
+  else
+    request 'http://ifconfig.me/ip', (error, response, body) ->
+      cb error or body.trim()
 
 # [lat, lon]
 # calculation from http://www.movable-type.co.uk/scripts/latlong.html
@@ -80,7 +53,43 @@ sendnote = (note, duration) ->
     socket.send buf, 0, buf.length, outport, "localhost"
   , duration
 
-makesound = (note, duration) ->
-  coremidi.write [0xC << 4, 14, 0]
+makesound = (note, duration, instrument=1, volume=1) ->
+  coremidi.write [0xC << 4, instrument, 0]
   coremidi.write [144, note, 127]
   setTimeout( (-> coremidi.write([128, note, 0])), duration/100 )
+
+# MAIN
+address = local_geo = remote_geo = null
+
+local_address = get_local_address()
+
+get_remote_address (addr) ->
+  address = addr
+  local_geo = geoip.lookup addr
+
+session.on 'packet', (raw) ->
+  if local_geo
+    packet = pcap.decode.packet raw
+
+    if packet?.link?.ip?.tcp?.data
+      source = packet?.link?.ip?.saddr
+      destination = packet?.link?.ip?.daddr
+      data = packet?.link?.ip?.tcp?.data?.toString()
+      last_ten_packet_sizes.push bytes = packet?.link?.ip?.tcp?.data_bytes
+      last_ten_packet_sizes = last_ten_packet_sizes[1..10]
+
+      total_length = packet?.link?.ip?.total_length
+
+      # filter out local to local messages
+      [first, local, remote] = (addr.split('.')[0] for addr in [local_address, source, destination])
+      unless (first is local) and (first is remote)
+        remote_geo = geoip.lookup(if source is address then destination else source)
+        if local_geo and remote_geo
+          util.print duration = distance(local_geo.ll, remote_geo.ll) / 1000 # km ~= ms # TODO: make it the actual speed of sound or light
+          util.print ' '
+          remote_addr = if source is address then destination else source
+          console.log notes = (Math.round(+dest/2) for dest in remote_addr.split '.')
+
+          for note in notes
+            makesound note, duration, 1, bytes/Math.max(last_ten_packet_sizes)
+          #   sendnote note, duration
